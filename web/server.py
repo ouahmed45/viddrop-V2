@@ -7,6 +7,7 @@ import asyncio
 import platform
 import subprocess
 import threading
+import mimetypes
 from typing import Dict, Any, Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
@@ -145,6 +146,23 @@ async def get_index():
             with open(c, "r", encoding="utf-8") as f:
                 return HTMLResponse(content=f.read())
     return HTMLResponse("<h1>ViddRop Studio Web - Chargement...</h1>")
+
+
+@app.get("/static/{file_path:path}")
+@app.get("/api/static/{file_path:path}")
+async def serve_static_fallback(file_path: str):
+    candidates = [
+        os.path.join(STATIC_DIR, file_path),
+        os.path.join(PARENT_DIR, "web", "static", file_path),
+        os.path.join(BASE_DIR, "static", file_path),
+        os.path.join(os.getcwd(), "web", "static", file_path),
+        os.path.join(os.getcwd(), "static", file_path)
+    ]
+    for c in candidates:
+        if os.path.isfile(c):
+            media_type, _ = mimetypes.guess_type(c)
+            return FileResponse(c, media_type=media_type or "application/octet-stream")
+    raise HTTPException(status_code=404, detail="File not found")
 
 
 @app.post("/api/info")
