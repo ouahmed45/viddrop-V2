@@ -81,7 +81,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+# Montage des fichiers statiques avec détection multi-chemins (Local & Vercel)
+for sc in (STATIC_DIR, os.path.join(PARENT_DIR, "web", "static"), os.path.join(os.getcwd(), "web", "static")):
+    if os.path.exists(sc):
+        app.mount("/static", StaticFiles(directory=sc), name="static")
+        break
 
 
 # Nettoyage automatique des fichiers temporaires vieux de plus de 2 heures
@@ -110,13 +114,37 @@ def cleanup_old_files():
 threading.Thread(target=cleanup_old_files, daemon=True).start()
 
 
+# Middleware pour corriger les chemins réécrits par Vercel Serverless
+@app.middleware("http")
+async def fix_vercel_paths(request, call_next):
+    path = request.url.path
+    # Vercel rewrites root to /api/index.py or /api
+    if path in ("/api/index.py", "/api/index", "/api", "/api/"):
+        request.scope["path"] = "/"
+    elif path.startswith("/api/static/"):
+        request.scope["path"] = path[4:]  # devienne /static/...
+    elif path.startswith("/api/api/"):
+        request.scope["path"] = path[4:]  # devienne /api/...
+    return await call_next(request)
+
+
 @app.get("/", response_class=HTMLResponse)
+@app.get("/api", response_class=HTMLResponse)
+@app.get("/api/", response_class=HTMLResponse)
+@app.get("/api/index", response_class=HTMLResponse)
+@app.get("/api/index.py", response_class=HTMLResponse)
 async def get_index():
-    index_file = os.path.join(TEMPLATES_DIR, "index.html")
-    if os.path.exists(index_file):
-        with open(index_file, "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read())
-    return HTMLResponse("<h1>ViddRop Studio Web en cours de chargement...</h1>")
+    candidates = [
+        os.path.join(TEMPLATES_DIR, "index.html"),
+        os.path.join(PARENT_DIR, "web", "templates", "index.html"),
+        os.path.join(BASE_DIR, "templates", "index.html"),
+        os.path.join(os.getcwd(), "web", "templates", "index.html")
+    ]
+    for c in candidates:
+        if os.path.exists(c):
+            with open(c, "r", encoding="utf-8") as f:
+                return HTMLResponse(content=f.read())
+    return HTMLResponse("<h1>ViddRop Studio Web - Chargement...</h1>")
 
 
 @app.post("/api/info")
