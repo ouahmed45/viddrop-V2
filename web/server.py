@@ -227,6 +227,124 @@ async def download_file(file_id: str):
     )
 
 
+# ── MOTEUR DE TÉLÉCHARGEMENT UNIFIÉ (HTTP & WEBSOCKET) ─────────────────────
+def perform_core_download(url: str, fmt: str, resolution: str, progress_hook=None, status_hook=None, loop=None):
+    res_limit = ""
+    res_height_map = {"1080p": 1080, "720p": 720, "480p": 480}
+    if resolution in res_height_map:
+        h = res_height_map[resolution]
+        res_limit = f"[height<={h}]"
+
+    task_id = str(uuid.uuid4())[:8]
+    outtmpl = os.path.join(DOWNLOADS_DIR, f"{task_id}_%(title).90s.%(ext)s")
+
+    hooks = []
+    if progress_hook:
+        hooks.append(progress_hook)
+
+    ydl_opts = {
+        'outtmpl': outtmpl,
+        'windowsfilenames': True,
+        'progress_hooks': hooks,
+        'concurrent_fragment_downloads': 16,
+        'fragment_retries': 15,
+        'retries': 10,
+        'socket_timeout': 30,
+        'noplaylist': True,
+        'no_warnings': True,
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
+        }
+    }
+
+    if FFMPEG_BIN:
+        ydl_opts['ffmpeg_location'] = FFMPEG_BIN
+        if fmt == "MP3":
+            ydl_opts.update({
+                'format': 'bestaudio/best',
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '320',
+                }],
+            })
+        elif fmt == "WEBM":
+            ydl_opts.update({
+                'format': f'bestvideo{res_limit}+bestaudio/best{res_limit}/best',
+                'merge_output_format': 'webm'
+            })
+        else:  # MP4
+            ydl_opts.update({
+                'format': f'bestvideo{res_limit}[vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo{res_limit}+bestaudio/best{res_limit}/best',
+                'merge_output_format': 'mp4',
+            })
+    else:
+        # Vercel Serverless environment (sans FFmpeg préinstallé)
+        if fmt == "MP3":
+            ydl_opts.update({
+                'format': 'bestaudio[ext=m4a]/bestaudio/best',
+            })
+        else:
+            ydl_opts.update({
+                'format': f'best[ext=mp4]/bestvideo{res_limit}[ext=mp4]+bestaudio[ext=m4a]/best{res_limit}/best',
+            })
+
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        title = info.get('title', 'Vidéo') if info else 'Vidéo'
+        
+        filepath = ydl.prepare_filename(info) if info else ''
+        if not os.path.exists(filepath):
+            for f in os.listdir(DOWNLOADS_DIR):
+                if f.startswith(task_id):
+                    filepath = os.path.join(DOWNLOADS_DIR, f)
+                    break
+
+    if fmt == "MP4" and filepath and os.path.exists(filepath) and FFMPEG_BIN:
+        filepath = ensure_h264_aac(filepath, resolution, status_hook, loop)
+
+    if not filepath or not os.path.exists(filepath):
+        raise Exception("Le fichier résultant est introuvable après traitement.")
+
+    file_id = str(uuid.uuid4())
+    ext = os.path.splitext(filepath)[1]
+    clean_name = f"{title[:70]}{ext}".replace("/", "_").replace("\\", "_")
+    file_size_mb = os.path.getsize(filepath) / (1024 * 1024)
+
+    DOWNLOAD_REGISTRY[file_id] = {
+        "path": filepath,
+        "name": clean_name,
+        "time": time.time()
+    }
+
+    return {
+        "type": "complete",
+        "title": title,
+        "filename": clean_name,
+        "size": f"{file_size_mb:.1f} Mo",
+        "download_url": f"/api/download-file/{file_id}"
+    }
+
+
+# ── ROUTE HTTP DIRECTE (POUR VERCEL SERVERLESS ET FALLBACK) ────────────────
+@app.post("/api/download-http")
+async def http_download(data: dict):
+    url = (data.get("url") or "").strip()
+    fmt = (data.get("format") or "MP4").upper()
+    resolution = data.get("resolution") or "source"
+
+    if not url:
+        raise HTTPException(status_code=400, detail="URL requise")
+
+    loop = asyncio.get_event_loop()
+    try:
+        result = await loop.run_in_executor(None, perform_core_download, url, fmt, resolution)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e)[:200])
+
+
 # ── WEBSOCKET POUR LE TÉLÉCHARGEMENT EN TEMPS RÉEL ──────────────────────────
 @app.websocket("/ws/download")
 async def websocket_download(websocket: WebSocket):
@@ -278,98 +396,11 @@ async def websocket_download(websocket: WebSocket):
                     send_status("⚙ Finalisation / Recodage Studio..."), loop
                 )
 
-        # Exécution du téléchargement dans un thread dédié
-        def perform_download():
-            res_limit = ""
-            res_height_map = {"1080p": 1080, "720p": 720, "480p": 480}
-            if resolution in res_height_map:
-                h = res_height_map[resolution]
-                res_limit = f"[height<={h}]"
+        result = await loop.run_in_executor(
+            None, perform_core_download, url, fmt, resolution, progress_hook, send_status, loop
+        )
 
-            task_id = str(uuid.uuid4())[:8]
-            outtmpl = os.path.join(DOWNLOADS_DIR, f"{task_id}_%(title).90s.%(ext)s")
-
-            ydl_opts = {
-                'outtmpl': outtmpl,
-                'windowsfilenames': True,
-                'progress_hooks': [progress_hook],
-                'concurrent_fragment_downloads': 16,
-                'fragment_retries': 15,
-                'retries': 10,
-                'socket_timeout': 30,
-                'noplaylist': True,
-                'no_warnings': True,
-                'http_headers': {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                    'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
-                }
-            }
-
-            if FFMPEG_BIN:
-                ydl_opts['ffmpeg_location'] = FFMPEG_BIN
-
-            if fmt == "MP3":
-                ydl_opts.update({
-                    'format': 'bestaudio/best',
-                    'postprocessors': [{
-                        'key': 'FFmpegExtractAudio',
-                        'preferredcodec': 'mp3',
-                        'preferredquality': '320',
-                    }],
-                })
-            elif fmt == "WEBM":
-                ydl_opts.update({
-                    'format': f'bestvideo{res_limit}+bestaudio/best{res_limit}/best',
-                    'merge_output_format': 'webm'
-                })
-            else:  # MP4
-                ydl_opts.update({
-                    'format': f'bestvideo{res_limit}[vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo{res_limit}+bestaudio/best{res_limit}/best',
-                    'merge_output_format': 'mp4',
-                })
-
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                title = info.get('title', 'Vidéo') if info else 'Vidéo'
-                
-                # Détermination du fichier final
-                filepath = ydl.prepare_filename(info) if info else ''
-                if not os.path.exists(filepath):
-                    # Chercher avec l'ID de tâche
-                    for f in os.listdir(DOWNLOADS_DIR):
-                        if f.startswith(task_id):
-                            filepath = os.path.join(DOWNLOADS_DIR, f)
-                            break
-
-            # Si format MP4 : Vérifier s'il faut recoder en H.264/AAC pour Premiere/Tricaster
-            if fmt == "MP4" and filepath and os.path.exists(filepath):
-                filepath = ensure_h264_aac(filepath, resolution, send_status, loop)
-
-            return title, filepath
-
-        title, final_file = await loop.run_in_executor(None, perform_download)
-
-        if not final_file or not os.path.exists(final_file):
-            raise Exception("Le fichier résultant est introuvable après traitement.")
-
-        file_id = str(uuid.uuid4())
-        ext = os.path.splitext(final_file)[1]
-        clean_name = f"{title[:70]}{ext}".replace("/", "_").replace("\\", "_")
-        file_size_mb = os.path.getsize(final_file) / (1024 * 1024)
-
-        DOWNLOAD_REGISTRY[file_id] = {
-            "path": final_file,
-            "name": clean_name,
-            "time": time.time()
-        }
-
-        await websocket.send_json({
-            "type": "complete",
-            "title": title,
-            "filename": clean_name,
-            "size": f"{file_size_mb:.1f} Mo",
-            "download_url": f"/api/download-file/{file_id}"
-        })
+        await websocket.send_json(result)
 
     except WebSocketDisconnect:
         pass
@@ -384,7 +415,7 @@ async def websocket_download(websocket: WebSocket):
 
 
 # ── GARANTIE DU FORMAT H.264 / AAC POUR PREMIERE PRO & TRICASTER ───────────
-def ensure_h264_aac(filepath: str, resolution: str, send_status_coro, loop) -> str:
+def ensure_h264_aac(filepath: str, resolution: str, send_status_coro=None, loop=None) -> str:
     if not FFMPEG_BIN:
         return filepath
 
@@ -423,9 +454,13 @@ def ensure_h264_aac(filepath: str, resolution: str, send_status_coro, loop) -> s
         return filepath
 
     # Doit être recodé
-    asyncio.run_coroutine_threadsafe(
-        send_status_coro("⚡ Recodage Studio H.264/AAC en cours..."), loop
-    )
+    if send_status_coro and loop:
+        try:
+            asyncio.run_coroutine_threadsafe(
+                send_status_coro("⚡ Recodage Studio H.264/AAC en cours..."), loop
+            )
+        except Exception:
+            pass
 
     base, _ = os.path.splitext(filepath)
     output_clean = base + "_studio.mp4"

@@ -166,56 +166,119 @@ document.addEventListener('DOMContentLoaded', () => {
         statusDot.className = "status-dot working";
         statusText.textContent = "Connexion au serveur de conversion...";
 
-        // Connexion WebSocket
+        // Connexion WebSocket avec fallback automatique en HTTP (pour Vercel Serverless)
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}/ws/download`;
 
-        ws = new WebSocket(wsUrl);
-
-        ws.onopen = () => {
-            statusText.textContent = "Téléchargement en cours...";
-            ws.send(JSON.stringify({
-                url: url,
-                format: currentFormat,
-                resolution: currentResolution
-            }));
+        let fallbackTriggered = false;
+        const triggerHttpFallback = () => {
+            if (fallbackTriggered) return;
+            fallbackTriggered = true;
+            try { if (ws) ws.close(); } catch (e) {}
+            startHttpDownload(url);
         };
 
-        ws.onmessage = (event) => {
-            try {
-                const msg = JSON.parse(event.data);
+        try {
+            ws = new WebSocket(wsUrl);
 
-                if (msg.type === "status") {
-                    statusText.textContent = msg.message;
-                    if (msg.message.includes("Recodage") || msg.message.includes("Finalisation")) {
-                        statusDot.className = "status-dot converting";
+            ws.onopen = () => {
+                statusText.textContent = "Téléchargement en cours...";
+                ws.send(JSON.stringify({
+                    url: url,
+                    format: currentFormat,
+                    resolution: currentResolution
+                }));
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const msg = JSON.parse(event.data);
+
+                    if (msg.type === "status") {
+                        statusText.textContent = msg.message;
+                        if (msg.message.includes("Recodage") || msg.message.includes("Finalisation")) {
+                            statusDot.className = "status-dot converting";
+                        }
+                    } else if (msg.type === "progress") {
+                        const p = Math.min(Math.max(msg.percent, 0), 100);
+                        progressPct.textContent = `${p}%`;
+                        progressFill.style.width = `${p}%`;
+                        speedText.textContent = `Vitesse : ${msg.speed || '--'}`;
+                        etaText.textContent = `Temps restant : ${msg.eta || '--'}`;
+                    } else if (msg.type === "complete") {
+                        onDownloadComplete(msg);
+                    } else if (msg.type === "error") {
+                        triggerHttpFallback();
                     }
-                } else if (msg.type === "progress") {
-                    const p = Math.min(Math.max(msg.percent, 0), 100);
-                    progressPct.textContent = `${p}%`;
-                    progressFill.style.width = `${p}%`;
-                    speedText.textContent = `Vitesse : ${msg.speed || '--'}`;
-                    etaText.textContent = `Temps restant : ${msg.eta || '--'}`;
-                } else if (msg.type === "complete") {
-                    onDownloadComplete(msg);
-                } else if (msg.type === "error") {
-                    onDownloadError(msg.message);
+                } catch (err) {
+                    console.error("WS error:", err);
                 }
-            } catch (err) {
-                console.error("WS error:", err);
-            }
-        };
+            };
 
-        ws.onerror = (err) => {
-            console.error("WebSocket error:", err);
-            onDownloadError("Erreur de connexion au serveur.");
-        };
+            ws.onerror = (err) => {
+                console.warn("WebSocket non disponible (Vercel Serverless), passage en mode HTTP...", err);
+                triggerHttpFallback();
+            };
 
-        ws.onclose = () => {
-            if (isProcessing) {
-                resetDownloadButtons();
+            ws.onclose = () => {
+                if (isProcessing && !fallbackTriggered) {
+                    triggerHttpFallback();
+                }
+            };
+        } catch (err) {
+            console.warn("Erreur WebSocket, passage en mode HTTP:", err);
+            triggerHttpFallback();
+        }
+    }
+
+    async function startHttpDownload(url) {
+        statusDot.className = "status-dot working";
+        statusText.textContent = "🚀 Mode HTTP actif : Analyse & Téléchargement Studio...";
+        progressPct.textContent = "25%";
+        progressFill.style.width = "25%";
+        speedText.textContent = "Vitesse : Flux direct";
+        etaText.textContent = "Temps restant : En cours...";
+
+        let fakePct = 25;
+        const progressTimer = setInterval(() => {
+            if (!isProcessing || fakePct >= 92) {
+                clearInterval(progressTimer);
+                return;
             }
-        };
+            fakePct += 4;
+            progressPct.textContent = `${fakePct}%`;
+            progressFill.style.width = `${fakePct}%`;
+            if (fakePct > 65) {
+                statusText.textContent = "⚙ Traitement et préparation du fichier...";
+            }
+        }, 900);
+
+        try {
+            const resp = await fetch("/api/download-http", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    url: url,
+                    format: currentFormat,
+                    resolution: currentResolution
+                })
+            });
+
+            clearInterval(progressTimer);
+
+            if (!resp.ok) {
+                const errData = await resp.json().catch(() => ({}));
+                throw new Error(errData.detail || "Erreur lors du traitement sur le serveur.");
+            }
+
+            const result = await resp.json();
+            progressPct.textContent = "100%";
+            progressFill.style.width = "100%";
+            onDownloadComplete(result);
+        } catch (err) {
+            clearInterval(progressTimer);
+            onDownloadError(err.message || "Erreur de connexion lors du téléchargement.");
+        }
     }
 
     function onDownloadComplete(result) {
