@@ -17,13 +17,22 @@ import yt_dlp
 
 # ── RÉPERTOIRES & DÉTECTION FFMPEG ──────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DOWNLOADS_DIR = os.path.join(BASE_DIR, "downloads")
+IS_VERCEL = bool(os.environ.get("VERCEL"))
+
+if IS_VERCEL:
+    DOWNLOADS_DIR = "/tmp/downloads"
+else:
+    DOWNLOADS_DIR = os.path.join(BASE_DIR, "downloads")
+
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
 
 os.makedirs(DOWNLOADS_DIR, exist_ok=True)
-os.makedirs(STATIC_DIR, exist_ok=True)
-os.makedirs(TEMPLATES_DIR, exist_ok=True)
+try:
+    os.makedirs(STATIC_DIR, exist_ok=True)
+    os.makedirs(TEMPLATES_DIR, exist_ok=True)
+except Exception:
+    pass
 
 # Recherche de ffmpeg.exe & ffprobe.exe
 PARENT_DIR = os.path.abspath(os.path.join(BASE_DIR, ".."))
