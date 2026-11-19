@@ -8,6 +8,7 @@ import platform
 import subprocess
 import threading
 import mimetypes
+import shutil
 from typing import Dict, Any, Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
@@ -35,22 +36,30 @@ try:
 except Exception:
     pass
 
-# Recherche de ffmpeg.exe & ffprobe.exe
+# Recherche de ffmpeg.exe & ffprobe.exe (Local Windows & Linux/Railway/Docker)
 PARENT_DIR = os.path.abspath(os.path.join(BASE_DIR, ".."))
 V5_DIR = os.path.join(PARENT_DIR, "v5")
 
 FFMPEG_BIN = None
-for candidate in (PARENT_DIR, V5_DIR, BASE_DIR):
-    if os.path.exists(os.path.join(candidate, "ffmpeg.exe")) or os.path.exists(os.path.join(candidate, "ffmpeg")):
-        FFMPEG_BIN = candidate
-        break
+
+# 1. Vérifier si ffmpeg est dans le PATH système (cas Linux / Railway / Docker / Windows PATH)
+sys_ffmpeg = shutil.which("ffmpeg")
+if sys_ffmpeg:
+    FFMPEG_BIN = os.path.dirname(sys_ffmpeg)
+    print(f"✅ FFmpeg système détecté: {sys_ffmpeg}")
+else:
+    # 2. Chercher dans les répertoires locaux
+    for candidate in (PARENT_DIR, V5_DIR, BASE_DIR):
+        if os.path.exists(os.path.join(candidate, "ffmpeg.exe")) or os.path.exists(os.path.join(candidate, "ffmpeg")):
+            FFMPEG_BIN = candidate
+            break
 
 if FFMPEG_BIN:
     if FFMPEG_BIN not in os.environ.get("PATH", ""):
         os.environ["PATH"] = FFMPEG_BIN + os.pathsep + os.environ.get("PATH", "")
-    print(f"✅ FFmpeg détecté: {FFMPEG_BIN}")
+    print(f"✅ FFmpeg configuré: {FFMPEG_BIN}")
 else:
-    print("⚠️ FFmpeg non trouvé dans les dossiers locaux, utilisation du PATH système.")
+    print("⚠️ FFmpeg non trouvé, yt-dlp utilisera les flux pré-combinés.")
 
 # Test accélération GPU NVIDIA NVENC
 USE_NVENC = False
@@ -327,8 +336,12 @@ def perform_core_download(url: str, fmt: str, resolution: str, progress_hook=Non
     }
 
 
-# ── ROUTE HTTP DIRECTE (POUR VERCEL SERVERLESS ET FALLBACK) ────────────────
+# ── ROUTE HTTP DIRECTE (POUR COMPATIBILITÉ TOTALE ET FALLBACK) ─────────────
 @app.post("/api/download-http")
+@app.post("/download-http")
+@app.post("/api/download")
+@app.post("/")
+@app.post("/api")
 async def http_download(data: dict):
     url = (data.get("url") or "").strip()
     fmt = (data.get("format") or "MP4").upper()
@@ -416,11 +429,11 @@ async def websocket_download(websocket: WebSocket):
 
 # ── GARANTIE DU FORMAT H.264 / AAC POUR PREMIERE PRO & TRICASTER ───────────
 def ensure_h264_aac(filepath: str, resolution: str, send_status_coro=None, loop=None) -> str:
-    if not FFMPEG_BIN:
-        return filepath
+    ffmpeg_exe = shutil.which("ffmpeg") or (os.path.join(FFMPEG_BIN, "ffmpeg.exe" if platform.system() == "Windows" else "ffmpeg") if FFMPEG_BIN else None)
+    ffprobe_exe = shutil.which("ffprobe") or (os.path.join(FFMPEG_BIN, "ffprobe.exe" if platform.system() == "Windows" else "ffprobe") if FFMPEG_BIN else None)
 
-    ffmpeg_exe = os.path.join(FFMPEG_BIN, "ffmpeg.exe" if platform.system() == "Windows" else "ffmpeg")
-    ffprobe_exe = os.path.join(FFMPEG_BIN, "ffprobe.exe" if platform.system() == "Windows" else "ffprobe")
+    if not ffmpeg_exe:
+        return filepath
 
     vcodec = ''
     acodec = ''
