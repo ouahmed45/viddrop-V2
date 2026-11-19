@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ViddRop Studio Web - Téléchargeur Vidéo Haute Définition (YouTube, TikTok, FB, Insta)</title>
+    <link rel="icon" type="image/x-icon" href="/static/viddRop.ico">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header class="header">
+        <div class="header-left">
+            <div class="logo-box">
+                <span class="logo-hq">⚡HQ</span>
+            </div>
+            <div class="logo-text">
+                <div class="logo-title">
+                    <span class="title-vidd">VIDD</span><span class="title-rop">ROP</span>
+                    <span class="badge-web">WEB</span>
+                </div>
+                <div class="logo-sub">UNIVERSAL SOCIAL FIX (FB / TT / IG / YT)</div>
+            </div>
+        </div>
+
+        <div class="header-badges">
+            <span class="badge badge-red">Premiere Pro Ready</span>
+            <span class="badge badge-green">Tricaster Universal</span>
+            <span class="badge badge-orange">H.264 / AAC Clean</span>
+        </div>
+
+        <div class="header-right">
+            <a href="/static/ViddRop_Setup_v3.exe" class="btn-desktop-download" download title="Télécharger le logiciel Windows autonome">
+                <span class="icon">💻</span>
+                <span>Version Logiciel PC (.exe)</span>
+            </a>
+        </div>
+    </header>
+
+    <main class="main-container">
+        <!-- Colonne Gauche : Formulaire & Moniteur -->
+        <section class="left-col">
+            <!-- URL Card -->
+            <div class="section-label">SOURCE / URL MÉDIA (YouTube, TikTok, Instagram, Facebook)</div>
+            <div class="card url-card">
+                <div class="url-row">
+                    <div class="input-wrapper">
+                        <span class="input-icon">🔗</span>
+                        <input type="text" id="urlInput" placeholder="Coller l'URL YouTube, TikTok, Instagram ou Facebook..." autocomplete="off">
+                        <button type="button" class="btn-clear" id="btnClearUrl" title="Effacer">✕</button>
+                    </div>
+                    <button type="button" class="btn-secondary" id="btnPaste">
+                        <span>📋</span> Coller
+                    </button>
+                    <button type="button" class="btn-accent" id="btnInspect">
+                        <span>🔍</span> Analyser
+                    </button>
+                </div>
+
+                <!-- Aperçu vidéo après analyse -->
+                <div class="video-preview-card" id="videoPreview" style="display: none;">
+                    <img id="previewThumb" src="" alt="Miniature" class="preview-thumb">
+                    <div class="preview-info">
+                        <h4 id="previewTitle" class="preview-title">Titre de la vidéo</h4>
+                        <div class="preview-meta">
+                            <span id="previewUploader">👤 Auteur</span> • 
+                            <span id="previewDuration">⏱ 00:00</span> • 
+                            <span class="badge-res" id="previewMaxRes">1080p</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Profil d'exportation -->
+            <div class="section-label">PROFIL D'EXPORTATION</div>
+            <div class="card format-card">
+                <div class="formats-grid">
+                    <div class="format-btn active" data-format="MP4">
+                        <div class="fmt-title">MP4</div>
+                        <div class="fmt-desc">Régie / Premiere Pro Universal</div>
+                        <div class="fmt-check">✓</div>
+                    </div>
+                    <div class="format-btn" data-format="MP3">
+                        <div class="fmt-title">MP3</div>
+                        <div class="fmt-desc">Audio Premium 320k Studio</div>
+                        <div class="fmt-check">✓</div>
+                    </div>
+                    <div class="format-btn" data-format="WEBM">
+                        <div class="fmt-title">WEBM</div>
+                        <div class="fmt-desc">Format Web Native Brut</div>
+                        <div class="fmt-check">✓</div>
+                    </div>
+                </div>
+
+                <!-- Résolution -->
+                <div class="resolution-row" id="resRow">
+                    <span class="res-label">Résolution cible :</span>
+                    <div class="res-pills">
+                        <button type="button" class="res-pill active" data-res="source">Source (4K/Max)</button>
+                        <button type="button" class="res-pill" data-res="1080p">1080p (Full HD)</button>
+                        <button type="button" class="res-pill" data-res="720p">720p (HD)</button>
+                        <button type="button" class="res-pill" data-res="480p">480p (SD)</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Moniteur de téléchargement & encodage -->
+            <div class="section-label">MONITEUR DE TÉLÉCHARGEMENT & ENCODAGE STUDIO</div>
+            <div class="card monitor-card">
+                <div class="monitor-header">
+                    <div class="status-indicator">
+                        <span class="status-dot ready" id="statusDot">●</span>
+                        <span class="status-text" id="statusText">Prêt</span>
+                    </div>
+                    <div class="progress-pct" id="progressPct">0%</div>
+                </div>
+
+                <div class="progress-track">
+                    <div class="progress-fill" id="progressFill" style="width: 0%;"></div>
+                </div>
+
+                <div class="monitor-footer">
+                    <span class="speed-text" id="speedText">Vitesse : --</span>
+                    <span class="eta-text" id="etaText">Temps restant : --</span>
+                </div>
+            </div>
+
+            <!-- Boutons d'action -->
+            <div class="action-row">
+                <button type="button" class="btn-main-download" id="btnDownload">
+                    <span class="btn-icon">⚡</span>
+                    <span class="btn-text">TÉLÉCHARGER & RECODER POUR REGIE/PREMIERE</span>
+                </button>
+            </div>
+
+            <!-- Résultat prêt à télécharger -->
+            <div class="card download-ready-card" id="readyCard" style="display: none;">
+                <div class="ready-icon">🎉</div>
+                <div class="ready-info">
+                    <div class="ready-title" id="readyTitle">Fichier prêt !</div>
+                    <div class="ready-details" id="readyDetails">MP4 • 1080p • 45 Mo</div>
+                </div>
+                <a href="#" id="readyDownloadBtn" class="btn-ready-download" download>
+                    <span>📥</span> Télécharger le fichier
+                </a>
+            </div>
+        </section>
+
+        <!-- Colonne Droite : File d'attente & Historique -->
+        <aside class="right-col">
+            <!-- Historique -->
+            <div class="aside-section">
+                <div class="aside-header">
+                    <span class="aside-title">HISTORIQUE DES TÉLÉCHARGEMENTS</span>
+                    <button type="button" class="btn-link" id="btnClearHistory">Effacer</button>
+                </div>
+                <div class="history-list" id="historyList">
+                    <div class="empty-state" id="historyEmpty">Aucun téléchargement récent</div>
+                </div>
+            </div>
+
+            <!-- Infos ViddRop Studio Pro -->
+            <div class="card info-banner">
+                <div class="info-banner-header">
+                    <span class="badge-accent">Studio Pro Edition</span>
+                    <span class="app-version">v3.0</span>
+                </div>
+                <h3>Besoin de vitesse maximale sans limite ?</h3>
+                <p>Téléchargez la version Bureau pour Windows : bénéficiez de l'accélération matérielle NVIDIA NVENC, de téléchargements parallèles par lot, et de l'intégration directe Premiere Pro.</p>
+                <a href="/static/ViddRop_Setup_v3.exe" class="btn-banner-download" download>
+                    Installer ViddRop sur PC (.exe)
+                </a>
+            </div>
+        </aside>
+    </main>
+
+    <footer class="footer">
+        <p>ViddRop Studio Pro Web • Développé pour le montage vidéo professionnel (Premiere Pro, Tricaster, DaVinci Resolve) • Compatible YouTube, TikTok, Instagram, Facebook</p>
+    </footer>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

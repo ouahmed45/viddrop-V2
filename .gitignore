@@ -1,0 +1,53 @@
+# ── FICHIERS VOLUMINEUX (> 100 Mo rejetés par GitHub) ──
+*.exe
+*.pkg
+*.dll
+*.so
+*.dylib
+ffmpeg.exe
+ffprobe.exe
+ffplay.exe
+ViddRop_Setup_v3.exe
+viddRop.exe
+
+# ── FICHIERS TEMPORAIRES & TÉLÉCHARGEMENTS ──
+downloads/
+web/downloads/
+*.mp4
+*.webm
+*.mp3
+*.part
+*.ytdl
+*.aria2
+temp_*
+
+# ── COMPILATION PYINSTALLER ──
+build/
+dist/
+*.spec.bak
+
+# ── ANCIENNES VERSIONS ARCHIVÉES ──
+V4/
+
+# ── PYTHON ──
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
+.Python
+env/
+venv/
+.venv/
+
+# ── FICHIERS SENSIBLES & NOTES LOCALES ──
+*mot de passe*
+*password*
+*.txt
+!requirements.txt
+
+# ── SYSTÈME ──
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
